@@ -1,0 +1,16 @@
+{application, s2,
+ [{description, "S2 Geometry NIF"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    error_logger
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Jordan Bracco <href@random.sh>"]},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
