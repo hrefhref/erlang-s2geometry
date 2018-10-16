@@ -54,8 +54,8 @@
 using std::vector;
 using std::make_tuple;
 using std::ref;
-
-
+using std::cout;
+bool FLAGS_s2debug = false;
 using namespace nifpp;
 
 // from mongodb s2 integration when parsing geojson
@@ -82,6 +82,30 @@ bool fixOrientationTo(vector<S2Point>* points, const bool wantClockwise) {
     return true;
     //uassert(0, "Couldn't fix the orientation of a loop!", 0);
 }
+static void eraseDuplicatePoints(vector<S2Point>* vertices) {
+    for (size_t i = 1; i < vertices->size(); ++i) {
+        if ((*vertices)[i - 1] == (*vertices)[i]) {
+            vertices->erase(vertices->begin() + i);
+            // We could have > 2 adjacent identical vertices, and must examine i again.
+            --i;
+        }
+    }
+}
+
+static bool isLoopClosed(const vector<S2Point>& loop) {
+  cout << "\n isLoopClosed\n";
+    if (loop.empty()) {
+        return false;
+    }
+
+    if (loop[0] != loop[loop.size() - 1]) {
+        return false;
+    }
+
+  cout << "\n isLoopClosed ok\n";
+    return true;
+}
+
 
 extern "C" {
 
@@ -99,12 +123,44 @@ extern "C" {
     return make(env, ptr);
   }
 
+  static ERL_NIF_TERM index_space_used(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    MutableIndexReference* index;
+    nifpp::get_throws(env, argv[0], index);
+    size_t size = index->index.SpaceUsed();
+    return make(env, make_tuple(str_atom("ok"), size));
+  }
+
+  static ERL_NIF_TERM index_is_fresh(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    MutableIndexReference* index;
+    nifpp::get_throws(env, argv[0], index);
+    bool fresh = index->index.is_fresh();
+    return make(env, make_tuple(str_atom("ok"), fresh));
+  }
+
+  static ERL_NIF_TERM index_force_build(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    MutableIndexReference* index;
+    nifpp::get_throws(env, argv[0], index);
+    index->index.ForceBuild();
+    return make(env, str_atom("ok"));
+  }
+
+  static ERL_NIF_TERM index_minimize(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    MutableIndexReference* index;
+    nifpp::get_throws(env, argv[0], index);
+    index->index.Minimize();
+    return make(env, str_atom("ok"));
+  }
+
+
   /* s2:index_contains_latlng(IndexReference, lng,lat) */
   static ERL_NIF_TERM index_containing_point(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
   {
       try
       {
-        //MutableS2ShapeIndex* index;
         MutableIndexReference* index;
         nifpp::get_throws(env, argv[0], index);
 
@@ -121,11 +177,11 @@ extern "C" {
         if (query.Contains(point)) {
           std::vector<std::tuple<std::string, int>> shapes;
           for (S2Shape* shape : query.GetContainingShapes(point)) {
-            int id = shape->id();
-            if(index->references.find(id) != index->references.end()) {
-              std::string refid = index->references.at(id);
-              shapes.push_back (std::make_tuple(refid, id));
-            }
+              int id = shape->id();
+              if(index->references.find(id) != index->references.end()) {
+                std::string refid = index->references.at(id);
+                shapes.push_back (std::make_tuple(refid, id));
+              }
           }
 
           return make(env, make_tuple(str_atom("ok"), shapes));
@@ -143,7 +199,6 @@ extern "C" {
   {
       try
       {
-        //MutableS2ShapeIndex *index;
         MutableIndexReference *index;
         nifpp::get(env, argv[0], index);
 
@@ -153,10 +208,10 @@ extern "C" {
         std::string ref;
         nifpp::get_throws(env, argv[2], ref);
 
-        vector<std::tuple<double,double>> rawlist;
-        nifpp::get_throws(env, argv[3], rawlist);
-
         if (type == "polyline") {
+          vector<std::tuple<double,double>> rawlist;
+          nifpp::get_throws(env, argv[3], rawlist);
+
           vector<S2LatLng> latlngs;
 
           auto f_each = [&](std::tuple<double,double> tuple) {
@@ -180,30 +235,49 @@ extern "C" {
         }
 
         if (type == "polygon") {
-          vector<S2Point> points;
+          vector<vector<std::tuple<double,double>>> coords;
+          nifpp::get_throws(env, argv[3], coords);
 
-        auto f_each = [&](std::tuple<double,double> tuple) {
-            long double lng = std::get<0>(tuple);
-            long double lat = std::get<1>(tuple);
+        vector<S2Loop *> loops;
+
+          using s2builderutil::IntLatLngSnapFunction;
+          S2Builder builder(S2Builder::Options(IntLatLngSnapFunction(7)));
+          S2Polygon polygon;
+
+          builder.StartLayer(absl::make_unique<IndexedS2PolygonLayerWithRef>(index, ref));
+
+        auto f_each = [&](vector<std::tuple<double,double>> list) {
+          vector<S2Point> points;
+          auto load_points = [&](std::tuple<double,double> tuple) {
+            double lng = std::get<0>(tuple);
+            double lat = std::get<1>(tuple);
             S2LatLng latlng = S2LatLng::FromDegrees(lat, lng);
             S2Point point = latlng.Normalized().ToPoint();
             points.push_back (point);
           };
 
-          std::for_each(rawlist.begin(), rawlist.end(), f_each);
-
-          S2Loop loop;
+          std::for_each(list.begin(), list.end(), load_points);
+          // Verify loop is closed todo
+          eraseDuplicatePoints(&points);
+          // Drop the duplicated last point.
+          points.resize(points.size() - 1);
+          S2Loop loop(points);
           loop.Init(points);
-          using s2builderutil::IntLatLngSnapFunction;
-          S2Builder builder(S2Builder::Options(IntLatLngSnapFunction(2)));
-          S2Polygon polygon;
-
-          builder.StartLayer(absl::make_unique<IndexedS2PolygonLayerWithRef>(index, ref));
+          if(!loop.IsValid()) {
+            cout << "!! loop is not valid\n";
+            //return make(env,std::make_tuple(str_atom("error"), str_atom("invalid_polygon_loop")));
+          };
+          loop.Normalize();
           builder.AddLoop(loop);
+        };
+
+          std::for_each(coords.begin(), coords.end(), f_each);
+
           S2Error error;
 
           if (!builder.Build(&error)) {
             S2_LOG(ERROR) << error;
+            cout << "invalid polygon\n";
             return make(env,std::make_tuple(str_atom("error"), str_atom("invalid_polygon")));
           }
 
@@ -220,8 +294,12 @@ extern "C" {
 ErlNifFunc nif_funcs[] =
 {
     {"new_mutable_shape_index", 0, new_mutable_shape_index},
-    {"index_containing_point", 3, index_containing_point},
+    {"index_force_build", 1, index_force_build, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"index_minimize", 1, index_minimize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"index_containing_point", 3, index_containing_point, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"index_space_used", 1, index_space_used, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_add", 4, index_add},
+    {"index_is_fresh", 1, index_is_fresh},
 };
 
 ERL_NIF_INIT(s2, nif_funcs, load,

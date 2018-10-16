@@ -7,7 +7,13 @@
 %% API functions
 %%====================================================================
 
--export([new_mutable_shape_index/0, index_add/4, index_containing_point/3]).
+-export([new_mutable_shape_index/0,
+         index_add/4,
+         index_containing_point/3,
+         index_is_fresh/1,
+         index_space_used/1,
+         index_force_build/1,
+         index_minimize/1]).
 -export([new_polyline/1]).
 -on_load(init/0).
 
@@ -32,6 +38,22 @@ index_add(_Index, _ShapeKind, _ShapeRef, _Coords) ->
 
 -spec index_containing_point(index(), lng(), lat()) -> {ok, [{shape_ref(), shape_index_ref()}]} | no_match.
 index_containing_point(_Index, _Lng, _Lat) ->
+  not_loaded(?LINE).
+
+-spec index_space_used(index()) -> {ok, integer}.
+index_space_used(_Index) ->
+  not_loaded(?LINE).
+
+-spec index_is_fresh(index()) -> {ok, boolean}.
+index_is_fresh(_Index) ->
+  not_loaded(?LINE).
+
+-spec index_force_build(index()) -> ok.
+index_force_build(_Index) ->
+  not_loaded(?LINE).
+
+-spec index_minimize(index()) -> ok.
+index_minimize(_Index) ->
   not_loaded(?LINE).
 
 new_polyline(_) ->
