@@ -10,10 +10,12 @@
 -export([new_mutable_shape_index/0,
          index_add/4,
          index_containing_point/3,
+         index_nearby_point/3, index_nearby_point/4,
          index_is_fresh/1,
          index_space_used/1,
          index_force_build/1,
-         index_minimize/1]).
+         index_minimize/1
+        ]).
 -export([new_polyline/1]).
 -on_load(init/0).
 
@@ -24,12 +26,16 @@ new_mutable_shape_index() ->
   not_loaded(?LINE).
 
 -opaque index() :: reference().
--type shape() :: polygon | polyline.
+-type shape() :: polygon | polyline | point.
 -type shape_ref() :: binary().
 -type shape_index_ref() :: non_neg_integer().
 -type lng() :: boolean.
 -type lat() :: boolean.
--type coords() :: [{lng(), lat()}, ...].
+-type coords() :: coords_polygon() | coords_polyline() | coords_point().
+-type coords_polygon() :: [[{lng(), lat()}, ...], ...].
+-type coords_polyline() :: [{lng(), lat()}, ...].
+-type coords_point() :: {lng(), lat()}.
+
 
 -spec index_add(index(), shape(), shape_ref(), coords()) -> ok | {error, any()}.
 
@@ -38,6 +44,13 @@ index_add(_Index, _ShapeKind, _ShapeRef, _Coords) ->
 
 -spec index_containing_point(index(), lng(), lat()) -> {ok, [{shape_ref(), shape_index_ref()}]} | no_match.
 index_containing_point(_Index, _Lng, _Lat) ->
+  not_loaded(?LINE).
+
+-spec index_nearby_point(index(), lng(), lat()) -> {ok, [{shape_ref(), shape_index_ref()}]} | no_match.
+index_nearby_point(Index, Lng, Lat) ->
+  index_nearby_point(Index, Lng, Lat, []).
+
+index_nearby_point(_Index, _Lng, _Lat, _Opts) ->
   not_loaded(?LINE).
 
 -spec index_space_used(index()) -> {ok, integer}.

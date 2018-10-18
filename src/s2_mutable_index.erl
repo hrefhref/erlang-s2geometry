@@ -2,8 +2,10 @@
 -behaviour(gen_server).
 
 -export([start_link/0,
+         add_point/4, add_point/5,
          add_polyline/3, add_polyline/4,
          add_polygon/3, add_polygon/4,
+         nearby/3, nearby/4,
          contains/3, contains/4,
          space_used/1, space_used/2,
          is_fresh/1, is_fresh/2,
@@ -31,6 +33,18 @@ add_polygon(Pid, Ref, Coords) -> add_polygon(Pid, Ref, Coords, []).
 add_polygon(Pid, Ref, Coords, Opts) ->
   Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
   gen_server:call(Pid, {add_polygon, Ref, Coords}, Timeout).
+
+add_point(Pid, Ref, Lng, Lat) -> add_point(Pid, Ref, Lng, Lat, []).
+
+add_point(Pid, Ref, Lng, Lat, Opts) ->
+  Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
+  gen_server:call(Pid, {add_point, Ref, Lng, Lat}, Timeout).
+
+nearby(Pid, Lng, Lat) -> nearby(Pid, Lng, Lat, []).
+
+nearby(Pid, Lng, Lat, Opts) ->
+  Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
+  gen_server:call(Pid, {nearby, Lng, Lat, Opts}, Timeout).
 
 contains(Pid, Lng, Lat) -> contains(Pid, Lng, Lat, []).
 
@@ -78,12 +92,24 @@ handle_call({add_polygon, Ref, Coords}, _From, Index) ->
   Rep = s2:index_add(Index, polygon, Ref, Coords),
   {reply, Rep, Index};
 
+handle_call({add_point, Ref, Lng, Lat}, _From, Index) ->
+  Rep = s2:index_add(Index, point, Ref, {Lng, Lat}),
+  {reply, Rep, Index};
+
 handle_call({contains, Lng, Lat}, _From, Index) ->
   Rep = case s2:index_containing_point(Index, Lng, Lat) of
-    no_match -> [];
-    {ok, Results} -> [Id || {Id, _IndexId} <- Results]
+    {ok, Results} -> [Id || {Id, _IndexId} <- Results];
+    Error -> Error
   end,
   {reply, Rep, Index};
+
+handle_call({nearby, Lng, Lat, Opts}, _From, Index) ->
+  Rep = case s2:index_nearby_point(Index, Lng, Lat, Opts) of
+    {ok, Results} -> [{Id, Distance} || {Id, _IndexId, Distance} <- Results];
+    Error -> Error
+  end,
+  {reply, Rep, Index};
+
 
 handle_call(space_used, _From, Index) ->
   {reply, s2:index_space_used(Index), Index};

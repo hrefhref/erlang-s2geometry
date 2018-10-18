@@ -32,6 +32,7 @@
 #include "s2/s2point_index.h"
 #include "s2/s2region_term_indexer.h"
 #include "s2/s2point.h"
+#include "s2/s2point_vector_shape.h"
 #include "s2/s2loop.h"
 #include "s2/s2builder.h"
 #include "s2/s2builder_layer.h"
@@ -45,6 +46,7 @@
 #include "s2/s1chord_angle.h"
 #include "s2/s2shape_index.h"
 #include "s2/s2contains_point_query.h"
+#include "s2/s2closest_edge_query.h"
 #include "s2/mutable_s2shape_index.h"
 #include "s2/s2closest_point_query.h"
 #include "s2/s2point_index.h"
@@ -57,6 +59,16 @@ using std::ref;
 using std::cout;
 bool FLAGS_s2debug = false;
 using namespace nifpp;
+
+ERL_NIF_TERM ATOM_MAX_DISTANCE;
+ERL_NIF_TERM ATOM_MAX_RESULTS;
+ERL_NIF_TERM ATOM_INCLUSIVE_MAX_DISTANCE;
+ERL_NIF_TERM ATOM_INCLUDE_INTERIORS;
+ERL_NIF_TERM ATOM_OPEN;
+ERL_NIF_TERM ATOM_SEMI_CLOSED;
+ERL_NIF_TERM ATOM_CLOSED;
+#define ATOM(Id, Value) { Id = enif_make_atom(env, Value); }
+#define ERF(Error) { make(env, make_tuple(str_atom("error"), str_atom(Error))) }
 
 // from mongodb s2 integration when parsing geojson
 bool fixOrientationTo(vector<S2Point>* points, const bool wantClockwise) {
@@ -112,6 +124,13 @@ extern "C" {
   static int
   load(ErlNifEnv *env, void **priv, ERL_NIF_TERM load_info)
   {
+      ATOM(ATOM_MAX_DISTANCE, "max_distance");
+      ATOM(ATOM_MAX_RESULTS, "max_results");
+      ATOM(ATOM_INCLUSIVE_MAX_DISTANCE, "inclusive_max_distance");
+      ATOM(ATOM_INCLUDE_INTERIORS, "include_interiors");
+      ATOM(ATOM_OPEN, "open");
+      ATOM(ATOM_SEMI_CLOSED, "semi_closed");
+      ATOM(ATOM_CLOSED, "closed");
       nifpp::register_resource<MutableS2ShapeIndex>(env, nullptr, "MutableS2ShapeIndex");
       nifpp::register_resource<MutableIndexReference>(env, nullptr, "MutableIndexReference");
       return 0;
@@ -194,6 +213,72 @@ extern "C" {
       return enif_make_badarg(env);
   }
 
+  static ERL_NIF_TERM index_nearby_point(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    try
+    {
+      MutableIndexReference* index;
+      nifpp::get_throws(env, argv[0], index);
+
+      double lng;
+      double lat;
+      get_throws(env, argv[1], lng);
+      get_throws(env, argv[2], lat);
+      S2LatLng latlng = S2LatLng::FromDegrees(lat, lng);
+      S2Point point = latlng.Normalized().ToPoint();
+
+      if (!enif_is_list(env, argv[3])) {
+        return make(env, make_tuple(str_atom("error"), str_atom("invalid_options")));
+      }
+
+      ERL_NIF_TERM opts;
+      const ERL_NIF_TERM* option;
+      ERL_NIF_TERM head, tail;
+
+      int arity;
+      tail = argv[3];
+
+      S2ClosestEdgeQuery::Options options;
+      S2ClosestEdgeQuery query(&index->index, options);
+      S2ClosestEdgeQuery::PointTarget target(point);
+
+      while (enif_get_list_cell(env, tail, &head, &tail)) {
+        if (enif_get_tuple(env, head, &arity, &option) && 2==arity) {
+          if (option[0] == ATOM_MAX_DISTANCE) {
+              double meters;
+              if (enif_get_double(env, option[1], &meters)) {
+                S1ChordAngle max_angle = S2Earth::ToChordAngle(util::units::Meters(meters));
+                query.mutable_options()->set_max_distance(max_angle);
+              } else {
+                return ERF("invalid_max_distance_value");
+              }
+          } else if (option[0] == ATOM_MAX_RESULTS) {
+              int max_results;
+              if (enif_get_int(env, option[1], &max_results)) {
+                query.mutable_options()->set_max_results(max_results);
+              } else {
+                return make(env, make_tuple(str_atom("error"), str_atom("invalid_max_results_value")));
+              }
+          } else if (option[0] == ATOM_INCLUDE_INTERIORS) {
+            query.mutable_options()->set_include_interiors(true);
+          } else {
+          }
+        }
+      }
+      std::vector<std::tuple<std::string, int, double>> shapes;
+      for (const auto& result : query.FindClosestEdges(&target)) {
+          int id = result.shape_id();
+          if(index->references.find(id) != index->references.end()) {
+            std::string refid = index->references.at(id);
+            shapes.push_back (std::make_tuple(refid, id, S2Earth::ToMeters(result.distance())));
+          }
+      }
+      return make(env, make_tuple(str_atom("ok"), shapes));
+    }
+    catch(nifpp::badarg) {}
+    return ERF("badarg");
+  }
+
   // index_add_shape(IndexRef :: reference, ShapeType :: polygon | polyline, CoordsList :: [{lng,lat}, ...])
   static ERL_NIF_TERM index_add(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
   {
@@ -233,6 +318,22 @@ extern "C" {
             return make(env,str_atom("invalid_polyline"));
           }
         }
+
+        if (type == "point") {
+          std::tuple<double,double> coords;
+          nifpp::get_throws(env, argv[3], coords);
+          double lng = std::get<0>(coords);
+          double lat = std::get<1>(coords);
+          S2LatLng latlng = S2LatLng::FromDegrees(lat, lng);
+          vector<S2Point> points;
+          S2Point point = latlng.Normalized().ToPoint();
+          points.push_back (point);
+
+          int id = index->index.Add(absl::make_unique<S2PointVectorShape>(std::move(points)));
+          index->references.insert (std::pair<int, std::string>(id, ref));
+          return make(env, str_atom("ok"));
+        }
+
 
         if (type == "polygon") {
           vector<vector<std::tuple<double,double>>> coords;
@@ -297,6 +398,7 @@ ErlNifFunc nif_funcs[] =
     {"index_force_build", 1, index_force_build, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_minimize", 1, index_minimize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_containing_point", 3, index_containing_point, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"index_nearby_point", 4, index_nearby_point, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_space_used", 1, index_space_used, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_add", 4, index_add},
     {"index_is_fresh", 1, index_is_fresh},
