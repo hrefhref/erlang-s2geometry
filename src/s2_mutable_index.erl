@@ -105,7 +105,7 @@ handle_call({contains, Lng, Lat}, _From, Index) ->
 
 handle_call({nearby, Lng, Lat, Opts}, _From, Index) ->
   Rep = case s2:index_nearby_point(Index, Lng, Lat, Opts) of
-    {ok, Results} -> [{Id, Distance} || {Id, _IndexId, Distance} <- Results];
+    {ok, Results} -> {ok, [{Id, Distance} || {Id, _IndexId, Distance} <- Results]};
     Error -> Error
   end,
   {reply, Rep, Index};

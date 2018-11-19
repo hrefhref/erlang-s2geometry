@@ -118,7 +118,6 @@ static bool isLoopClosed(const vector<S2Point>& loop) {
     return true;
 }
 
-
 extern "C" {
 
   static int
@@ -329,6 +328,7 @@ extern "C" {
           S2Point point = latlng.Normalized().ToPoint();
           points.push_back (point);
 
+          eraseRef(index->references, index->index, ref);
           int id = index->index.Add(absl::make_unique<S2PointVectorShape>(std::move(points)));
           index->references.insert (std::pair<int, std::string>(id, ref));
           return make(env, str_atom("ok"));

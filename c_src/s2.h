@@ -22,6 +22,20 @@
 #include "s2/s2error.h"
 #include "s2/s2polygon.h"
 
+
+void eraseRef(std::map<int, std::string> &map, MutableS2ShapeIndex &index, std::string ref) {
+  for(std::map<int, std::string>::iterator it = map.begin(); it != map.end(); it++)
+  {
+	if((it->second) == ref)
+	{
+        index.Release(it->first);
+		map.erase(it);
+		break;
+	}
+  }
+}
+
+
 struct MutableIndexReference {
   MutableS2ShapeIndex index;
   std::map<int, std::string> references = {};
@@ -43,6 +57,7 @@ class IndexedS2PolygonLayerWithRef : public S2Builder::Layer {
   void Build(const Graph& g, S2Error* error) override {
     layer_.Build(g, error);
     if (error->ok() && !polygon_->is_empty()) {
+      eraseRef(index_->references, index_->index, ref_);
       int id = index_->index.Add(absl::make_unique<S2Polygon::OwningShape>(std::move(polygon_)));
       index_->references.insert (std::pair<int,std::string>(id, ref_)); //:make_tuple(id, ref_));
     }
