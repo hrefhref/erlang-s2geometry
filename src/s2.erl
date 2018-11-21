@@ -16,6 +16,7 @@
          index_force_build/1,
          index_minimize/1
         ]).
+-export([distance_between_points/2]).
 -export([new_polyline/1]).
 -on_load(init/0).
 
@@ -71,6 +72,10 @@ index_minimize(_Index) ->
 
 new_polyline(_) ->
     not_loaded(?LINE).
+
+-spec distance_between_points({lng(), lat()}, {lng(), lat()}) -> {ok, float()}.
+distance_between_points(_, _) ->
+  not_loaded(?LINE).
 
 init() ->
     SoName = case code:priv_dir(?APPNAME) of

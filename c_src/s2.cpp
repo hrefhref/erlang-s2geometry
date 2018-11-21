@@ -179,6 +179,29 @@ extern "C" {
     return make(env, str_atom("ok"));
   }
 
+  static ERL_NIF_TERM distance_between_points(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+  {
+    try
+    {
+      std::tuple<double,double> p1coords;
+      nifpp::get_throws(env, argv[0], p1coords);
+      double p1lng = std::get<0>(p1coords);
+      double p1lat = std::get<1>(p1coords);
+      S2LatLng p1latlng = S2LatLng::FromDegrees(p1lat, p1lng).Normalized();
+      std::tuple<double,double> p2coords;
+      nifpp::get_throws(env, argv[1], p2coords);
+      double p2lng = std::get<0>(p2coords);
+      double p2lat = std::get<1>(p2coords);
+      S2LatLng p2latlng = S2LatLng::FromDegrees(p2lat, p2lng).Normalized();
+
+      S1Angle angle = p1latlng.GetDistance(p2latlng);
+
+     return make(env, make_tuple(str_atom("ok"), S2Earth::ToMeters(angle)));
+
+    }
+      catch(nifpp::badarg) {}
+      return enif_make_badarg(env);
+  }
 
   /* s2:index_contains_latlng(IndexReference, lng,lat) */
   static ERL_NIF_TERM index_containing_point(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -408,6 +431,8 @@ ErlNifFunc nif_funcs[] =
     {"index_space_used", 1, index_space_used, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"index_add", 4, index_add},
     {"index_is_fresh", 1, index_is_fresh},
+
+    {"distance_between_points", 2, distance_between_points},
 };
 
 ERL_NIF_INIT(s2, nif_funcs, load,
