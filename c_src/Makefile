@@ -21,7 +21,7 @@ UNAME_SYS := $(shell uname -s)
 ifeq ($(UNAME_SYS), Darwin)
 	CC ?= cc
 	CFLAGS ?= -std=c99 -arch x86_64 -finline-functions -Wall -Wmissing-prototypes
-	CXXFLAGS ?= -arch x86_64 -finline-functions -Wall
+	CXXFLAGS ?= -std=gnu++11 -arch x86_64 -finline-functions -Wall
 	LDFLAGS ?= -arch x86_64 -flat_namespace -undefined suppress
 	S2_INCLUDE_DIR ?= /usr/local/include/
 	S2_LIB_DIR ?= /usr/local/lib/
