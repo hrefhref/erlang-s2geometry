@@ -60,6 +60,9 @@ using std::cout;
 bool FLAGS_s2debug = false;
 using namespace nifpp;
 
+ERL_NIF_TERM ATOM_TRUE;
+ERL_NIF_TERM ATOM_FALSE;
+ERL_NIF_TERM ATOM_NIL;
 ERL_NIF_TERM ATOM_MAX_DISTANCE;
 ERL_NIF_TERM ATOM_MAX_RESULTS;
 ERL_NIF_TERM ATOM_INCLUSIVE_MAX_DISTANCE;
@@ -123,6 +126,9 @@ extern "C" {
   static int
   load(ErlNifEnv *env, void **priv, ERL_NIF_TERM load_info)
   {
+      ATOM(ATOM_TRUE, "true");
+      ATOM(ATOM_FALSE, "false");
+      ATOM(ATOM_NIL, "nil");
       ATOM(ATOM_MAX_DISTANCE, "max_distance");
       ATOM(ATOM_MAX_RESULTS, "max_results");
       ATOM(ATOM_INCLUSIVE_MAX_DISTANCE, "inclusive_max_distance");
@@ -258,8 +264,8 @@ extern "C" {
               } else {
                 return make(env, make_tuple(str_atom("error"), str_atom("invalid_max_results_value")));
               }
-          } else if (option[0] == ATOM_INCLUDE_INTERIORS) {
-            query.mutable_options()->set_include_interiors(true);
+          } else if (option[0] == ATOM_INCLUDE_INTERIORS && option[1] == ATOM_FALSE) {
+            query.mutable_options()->set_include_interiors(false);
           } else {
           }
         }
